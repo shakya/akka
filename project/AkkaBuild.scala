@@ -369,9 +369,9 @@ object AkkaBuild extends Build {
       }
   }
   
-  /** This method is repsonsible for genreating a new typeasafe config reference.conf file for OSGi.
+  /** This method is repsonsible for generating a new typeasafe config reference.conf file for OSGi.
    * it copies all the files in the `includes` parameter, using the associated project name.  Then
-   * it generates a new resource.conf file which includes these files.
+   * it generates a new reference.conf file which includes these files.
    *
    * @param target  The location where we write the new files
    * @param includes A sequnece of (<reference.conf>, <project name>) pairs.
@@ -387,13 +387,13 @@ object AkkaBuild extends Build {
     val copiedResourceFileLocations = toCopy.map(_._2)
     streams.log.debug("Copied OSGi resources: " + copiedResourceFileLocations.mkString("\n\t", "\n\t", "\n"))
     // Now we generate the new including conf file
-    val newConf = target / "resource.conf"
+    val newConf = target / "reference.conf"
     val confIncludes =
       for {
         (file, project) <- includes
       } yield "include \""+ project +".conf\""
     val writer = new PrintWriter(newConf)
-    try writer.write(confIncludes mkString "\n")
+    try writer.write(confIncludes mkString ("", "\n", "\n"))
     finally writer.close()
     streams.log.info("Copied OSGi resources.")
     newConf +: copiedResourceFileLocations
@@ -406,7 +406,7 @@ object AkkaBuild extends Build {
     settings = defaultSettings ++ formatSettings ++ scaladocSettings ++ javadocSettings ++ OSGi.osgi ++ Seq(
       libraryDependencies ++= Dependencies.osgi,
       cleanFiles <+= baseDirectory { base => base / "src/main/resources" } ,
-      ActorOsgiConfigurationReference <<= ActorOsgiConfigurationReferenceAction(projects.filter(p => !p.id.contains("test") && !p.id.contains("sample"))),
+      ActorOsgiConfigurationReference <<= ActorOsgiConfigurationReferenceAction(projects.filter(p => !p.id.contains("tests") && !p.id.contains("sample") && !p.id.contains("atmos"))),
       ActorMakeOsgiConfiguration <<= (ActorOsgiConfigurationReference, resourceManaged in Compile, streams) map makeOsgiConfigurationFiles,
       resourceGenerators in Compile <+= ActorMakeOsgiConfiguration,
       parallelExecution in Test := false,
@@ -564,55 +564,67 @@ object AkkaBuild extends Build {
 
   lazy val osgiDiningHakkersSample = Project(id = "akka-sample-osgi-dining-hakkers",
     base = file("akka-samples/akka-sample-osgi-dining-hakkers"),
-    settings = parentSettings
+    settings = parentSettings ++ osgiSampleSettings
   ) aggregate(osgiDiningHakkersSampleApi, osgiDiningHakkersSampleCommand, osgiDiningHakkersSampleCore,
       osgiDiningHakkersSampleIntegrationTest, uncommons)
 
   lazy val osgiDiningHakkersSampleApi = Project(id = "akka-sample-osgi-dining-hakkers-api",
     base = file("akka-samples/akka-sample-osgi-dining-hakkers/api"),
-    settings = sampleSettings ++ OSGi.osgiDiningHakkersSampleApi
+    settings = sampleSettings ++ osgiSampleSettings ++ OSGi.osgiDiningHakkersSampleApi
   )dependsOn(actor)
 
   lazy val osgiDiningHakkersSampleCommand = Project(id = "akka-sample-osgi-dining-hakkers-command",
     base = file("akka-samples/akka-sample-osgi-dining-hakkers/command"),
-    settings = sampleSettings ++ OSGi.osgiDiningHakkersSampleCommand ++ Seq(
-      libraryDependencies ++= Dependencies.osgiDiningHakkerSampleCommand
+    settings = sampleSettings ++ osgiSampleSettings ++ OSGi.osgiDiningHakkersSampleCommand ++ Seq(
+      libraryDependencies ++= Dependencies.osgiDiningHakkersSampleCommand
     )
   ) dependsOn (osgiDiningHakkersSampleApi, actor)
 
   lazy val osgiDiningHakkersSampleCore = Project(id = "akka-sample-osgi-dining-hakkers-core",
     base = file("akka-samples/akka-sample-osgi-dining-hakkers/core"),
-    settings = sampleSettings ++ OSGi.osgiDiningHakkersSampleCore ++ Seq(
-      libraryDependencies ++= Dependencies.osgiDiningHakkerSampleCore
+    settings = sampleSettings ++ osgiSampleSettings ++ OSGi.osgiDiningHakkersSampleCore ++ Seq(
+      libraryDependencies ++= Dependencies.osgiDiningHakkersSampleCore
     )
-  ) dependsOn (osgiDiningHakkersSampleApi, actor, remote, cluster, osgi)
+  ) dependsOn (osgiDiningHakkersSampleApi, actor, remote, cluster, persistence, osgi)
+
+  lazy val osgiDiningHakkersSampleTest = Project(id = "akka-sample-osgi-dining-hakkers-test",
+    base = file("akka-samples/akka-sample-osgi-dining-hakkers/integration-test"),
+    settings = sampleSettings ++ osgiSampleSettings ++ OSGi.osgiDiningHakkersSampleCore ++ Seq(
+      libraryDependencies ++= Dependencies.osgiDiningHakkersSampleTest
+    )
+  ) dependsOn (osgiDiningHakkersSampleCommand, osgiDiningHakkersSampleCore, testkit )
 
   //TODO to remove it as soon as the uncommons gets OSGified, see ticket #2990
   lazy val uncommons = Project(id = "akka-sample-osgi-dining-hakkers-uncommons",
     base = file("akka-samples/akka-sample-osgi-dining-hakkers/uncommons"),
-    settings = sampleSettings ++ OSGi.osgiDiningHakkersSampleUncommons ++ Seq(
+    settings = sampleSettings ++ osgiSampleSettings ++ OSGi.osgiDiningHakkersSampleUncommons ++ Seq(
       libraryDependencies ++= Dependencies.uncommons,
       version := "1.2.0"
     )
   )
 
   def executeMvnCommands(failureMessage: String, commands: String*) = {
-    if ({List("sh", "-c", commands.mkString("cd akka-samples/akka-sample-osgi-dining-hakkers; mvn -U ", " ", "")) !} != 0)
+    if ({List("sh", "-c", commands.mkString("cd akka-samples/akka-sample-osgi-dining-hakkers; mvn ", " ", "")) !} != 0)
       throw new Exception(failureMessage)
   }
 
   lazy val osgiDiningHakkersSampleIntegrationTest = Project(id = "akka-sample-osgi-dining-hakkers-integration",
     base = file("akka-samples/akka-sample-osgi-dining-hakkers-integration"),
-    settings = sampleSettings ++ (
-      if (System.getProperty("akka.osgi.sample.test", "false").toBoolean) Seq(
+    settings = sampleSettings ++ osgiSampleSettings ++ (
+      if (System.getProperty("akka.osgi.sample.test", "true").toBoolean) Seq(
         test in Test ~= { x => {
           executeMvnCommands("Osgi sample Dining hakkers test failed", "clean", "install")
-        }})
+        }},
+        // force publication of artifacts to local maven repo
+        compile in Compile <<=
+          (publishM2 in actor, publishM2 in testkit, publishM2 in remote, publishM2 in cluster, publishM2 in osgi, 
+              publishM2 in slf4j, publishM2 in persistence, compile in Compile) map
+            ((_, _, _, _, _, _, _, c) => c))
       else Seq.empty
       )
   ) dependsOn(osgiDiningHakkersSampleApi, osgiDiningHakkersSampleCommand, osgiDiningHakkersSampleCore, uncommons)
 
-
+  lazy val osgiSampleSettings: Seq[Setting[_]] = Seq(target :=  baseDirectory.value / "target-sbt")
 
   lazy val docs = Project(
     id = "akka-docs",
@@ -966,7 +978,7 @@ object AkkaBuild extends Build {
       case (false, _) => Seq.empty
     })
 
-  lazy val scaladocDiagramsEnabled = System.getProperty("akka.scaladoc.diagrams", "true").toBoolean
+  lazy val scaladocDiagramsEnabled = System.getProperty("akka.scaladoc.diagrams", "false").toBoolean
   lazy val scaladocOptions = List("-implicits") ::: (if (scaladocDiagramsEnabled) List("-diagrams") else Nil)
 
   lazy val scaladocSettings: Seq[sbt.Setting[_]]= {
@@ -1073,7 +1085,8 @@ object AkkaBuild extends Build {
       OsgiKeys.exportPackage := Seq("akka*"), //exporting akka packages enforces bnd to aggregate akka-actor packages in the bundle
       OsgiKeys.privatePackage := Seq("akka.osgi.impl"),
       //akka-actor packages are not imported, as contained in the CP
-      OsgiKeys.importPackage := (osgiOptionalImports map optionalResolution) ++ Seq("!sun.misc", scalaImport(),configImport(), "*") 
+      OsgiKeys.importPackage := (osgiOptionalImports map optionalResolution) ++ Seq("!sun.misc", scalaImport(),configImport(), "*"),
+      OsgiKeys.dynamicImportPackage := Seq("*")
      )
 
     val osgiDiningHakkersSampleApi = exports(Seq("akka.sample.osgi.api"))
@@ -1107,6 +1120,7 @@ object AkkaBuild extends Build {
       "akka.remote.routing",
       "akka.remote.transport",
       "akka.remote.serialization",
+      "akka.persistence.serialization",
       "akka.cluster",
       "akka.cluster.routing",
       "akka.cluster.protobuf",
@@ -1127,7 +1141,7 @@ object AkkaBuild extends Build {
     )
     def defaultImports = Seq("!sun.misc", akkaImport(), configImport(), scalaImport(), "*")
     def akkaImport(packageName: String = "akka.*") = "%s;version=\"[2.3,2.4)\"".format(packageName)
-    def configImport(packageName: String = "com.typesafe.config.*") = "%s;version=\"[0.4.1,1.1.0)\"".format(packageName)
+    def configImport(packageName: String = "com.typesafe.config.*") = "%s;version=\"[1.1.0,1.2.0)\"".format(packageName)
     def protobufImport(packageName: String = "com.google.protobuf.*") = "%s;version=\"[2.5.0,2.6.0)\"".format(packageName)
     def scalaImport(packageName: String = "scala.*") = "%s;version=\"[2.10,2.11)\"".format(packageName)
     def optionalResolution(packageName: String) = "%s;resolution:=optional".format(packageName)
@@ -1192,6 +1206,9 @@ object Dependencies {
       val tinybundles  = "org.ops4j.pax.tinybundles"   % "tinybundles"                  % "1.0.0"            % "test" // ApacheV2
       val log4j        = "log4j"                       % "log4j"                        % "1.2.14"           % "test" // ApacheV2
       val junitIntf    = "com.novocode"                % "junit-interface"              % "0.8"              % "test" // MIT
+      // dining hakkers integration test using pax-exam
+      val karafExam    = "org.apache.karaf.tooling.exam" % "org.apache.karaf.tooling.exam.container" % "2.3.3" % "test" // ApacheV2
+      val paxExam      = "org.ops4j.pax.exam"          % "pax-exam-junit4"              % "2.6.0"            % "test" // ApacheV2
     }
   }
 
@@ -1229,9 +1246,11 @@ object Dependencies {
 
   val osgi = Seq(osgiCore, osgiCompendium, Test.logback, Test.commonsIo, Test.pojosr, Test.tinybundles, Test.scalatest, Test.junit)
 
-  val osgiDiningHakkerSampleCore = Seq(config, osgiCore, osgiCompendium)
+  val osgiDiningHakkersSampleCore = Seq(config, osgiCore, osgiCompendium)
 
-  val osgiDiningHakkerSampleCommand = Seq(osgiCore, osgiCompendium)
+  val osgiDiningHakkersSampleCommand = Seq(osgiCore, osgiCompendium)
+
+  val osgiDiningHakkersSampleTest = Seq(osgiCore, osgiCompendium, Test.karafExam, Test.paxExam, Test.junit, Test.scalatest)
 
   val uncommons = Seq(uncommonsMath)
 
