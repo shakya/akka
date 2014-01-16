@@ -6,7 +6,7 @@ import akka.sample.osgi.api.{ DiningHakkersService, Identify, Identification }
 import akka.sample.osgi.test.TestOptions._
 import org.junit.runner.RunWith
 import org.junit.{ Before, Test }
-import org.ops4j.pax.exam.{ Option ⇒ PaxOption }
+import org.ops4j.pax.exam.{ Option => PaxOption }
 import org.ops4j.pax.exam.junit.{ Configuration, JUnit4TestRunner }
 import org.ops4j.pax.exam.util.Filter
 import org.scalatest.junit.JUnitSuite
